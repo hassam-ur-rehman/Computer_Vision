@@ -1,0 +1,48 @@
+Harris Corner Detection
+1. Objective and Dataset
+The aim is to implement Harris corner detection from first principles using NumPy, verify the mathematics, and evaluate its behaviour under changes in image geometry and intensity. The three experimental images are a structured brick wall, natural grass texture, and a deliberately low-contrast coffee photograph. A 10 x 10 checkerboard provides 81 known interior intersections for localization tests.
+2. Filtering and Harris Implementation
+A general odd-sized 2D correlation and convolution routine supports zero and reflect padding. Gaussian kernels are constructed from sigma and applied as two separable 1D passes; central-difference and Sobel operators compute image gradients. For a 21 x 21 kernel, separable filtering achieved an 11.02 x speed-up over direct filtering. The maximum OpenCV correlation discrepancy was 2.73 x 10^-12.
+For gradients Ix and Iy, Gaussian integration yields Sxx = G * Ix^2, Syy = G * Iy^2 and Sxy = G * (IxIy). The structure tensor is M = [[Sxx, Sxy], [Sxy, Syy]]. The detector computes R = det(M) - k[trace(M)]^2, then applies a 1% relative threshold and vectorized 3 x 3 non-maximum suppression. Baseline settings: sigma = 1.5, k = 0.04, Sobel derivatives and reflect padding.
+ 
+Figure 1. Detected corners on the four images; the checkerboard recovers all 81 known intersections.
+3. Corner, Edge and Flat Regions
+Region	Eigenvalue pattern	Typical response
+Corner	Both eigenvalues large	Positive R
+Edge	One dominant, one small	Negative R
+Flat	Both close to zero	R near zero
+
+Checkerboard sampling confirmed this interpretation: R was approximately +1,899,900 at corners, -220,371 at edges and zero in flat regions. The baseline found 165 brick, 852 grass and 60 coffee corners; the contrast-reduced image produces fewer strong responses.
+Eigenvalues and Invariance
+4. Eigenvalue Interpretation
+The symmetric 2 x 2 tensor has eigenvalues lambda1 and lambda2. They measure gradient energy along its principal directions. Its invariants satisfy det(M) = lambda1 * lambda2 and trace(M) = lambda1 + lambda2, so R = lambda1 * lambda2 - k(lambda1 + lambda2)^2. Both identities were verified numerically with relative error below 2 x 10^-16.
+Writing r = lambda2 / lambda1 (with lambda1 >= lambda2), a positive Harris response requires r > k(1+r)^2. The minimum positive ratios are 0.043561 for k = 0.04 and 0.068502 for k = 0.06. A larger k therefore rejects more edge-like responses.
+5. Transformation Repeatability
+For each transformation, original corner coordinates were mapped into the transformed frame; out-of-frame locations were excluded, and detections within two pixels counted as matches. Relative thresholds and all detector parameters were held fixed for the primary experiments. The notebook evaluated 117 image-transformation settings across rotation, scale, brightness, contrast and Gaussian noise.
+ 
+Figure 2. Repeatability trends under the five transformations for the brick, grass and coffee images.
+Rotation stayed above 96.7% for brick but reached 78.0% for low-contrast coffee. Additive brightness up to +80 retained at least 98.1% of corners. At noise sigma = 30, repeatability fell to 55.3% (brick), 57.6% (grass) and 28.3% (coffee). Contrast x2 reduced coffee repeatability to 23.3% because of pixel clipping. The fixed absolute threshold also underperformed the relative threshold at low contrast; for grass at x0.5, fixed-threshold repeatability was 25.6%. Scale changes reduce localization because the integration window has a fixed pixel size.
+
+Parameter Study and Discussion
+6. Sensitivity and OpenCV Comparison
+A 360-setting grid varied Gaussian sigma, Harris k and relative threshold. Larger sigma generally merges or smooths peaks, and larger thresholds remove weaker responses. The following counts use the 1% relative-threshold baseline with k = 0.04.
+Gaussian sigma	Brick corners	Grass corners	Coffee corners
+0.5	378	2,765	102
+1.5	165	852	60
+4.0	116	143	29
+
+Against OpenCV cornerHarris, the custom Gaussian window achieved directed agreement within two pixels of 24.85% (brick), 21.60% (grass), and 15.00% (coffee). The custom box-window variant agreed 100% because the reference used box integration. Median response-only timings were 3.42 to 3.88 ms for the custom implementation versus 0.27 to 0.30 ms in OpenCV.
+7. Observed Failure: Box Integration Window
+ 
+Figure 3. Gaussian 11 x 11 finds 81/81 true checkerboard corners; box 11 x 11 yields 162 displaced peaks, with none within two pixels.
+Uniform box averaging changes the tensor entries, shifting the eigenvalues and Harris response maxima away from the intersections. Gaussian weighting emphasizes nearby gradients and improves localization in this experiment. Scale-space detection is a further improvement for variable-sized image structures.
+
+8. Viva Questions and Answers
+Q1. What do the eigenvalues of M tell you geometrically?  They describe intensity variation along two principal directions: both large indicate a corner, one large indicates an edge, and both small indicate a flat area.
+Q2. Why does a Gaussian window work better than a box window?  A Gaussian gives more weight to nearby gradients and reduces the influence of distant pixels, improving peak localization in the checkerboard experiment.
+Q3. Why is Harris rotation invariant but not scale invariant?  Rotation changes the tensor orientation, not its determinant or trace. Scaling changes feature size relative to the fixed derivative and integration windows.
+Q4. What happens to R if image intensities are multiplied by 2?  With no clipping or quantization, gradients double, tensor entries multiply by 4, and both terms in R multiply by 16. Thus R becomes 16R.
+Q5. Why is R negative on edges?  At an edge, one eigenvalue is large and the other is near zero. The determinant is small, while the negative k times trace-squared term dominates.
+9. Conclusion
+The custom detector satisfies the Harris formulation, localizes all 81 checkerboard corners with Gaussian integration, and is robust to additive brightness. Its limitations are scale change, high noise, contrast clipping, and box-window peak displacement.
+
